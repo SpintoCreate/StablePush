@@ -1,0 +1,2 @@
+# Preserve upstream whitespace in context lines of the distributable diff.
+patches/*.patch -whitespace

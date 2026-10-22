@@ -1,0 +1,23 @@
+name: Build TrollStore candidate
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-14
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install ad-hoc signing tool
+        run: brew install ldid
+      - name: Check source and build arm64 iOS 15 candidate
+        run: |
+          python3 -m unittest discover -s tests -v
+          ./build.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ValidationRelay-candidate-unverified-on-device
+          path: |
+            dist/ValidationRelay.tipa
+            dist/ValidationRelay.tipa.sha256
+          if-no-files-found: error

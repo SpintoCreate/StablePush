@@ -1,0 +1,86 @@
+diff --git a/src/activation.rs b/src/activation.rs
+index d9b2d36..3c498e1 100644
+--- a/src/activation.rs
++++ b/src/activation.rs
+@@ -120,19 +120,44 @@ pub async fn activate(os_config: &dyn OSConfig) -> Result<KeyPairNew<RsaKey>, Pu
+         activation_info: String,
+     }
+ 
+-    let request = REQWEST
++    log::info!("registration-diagnostic stage=apple-activation event=request-started");
++    let response = REQWEST
+         .post(format!("https://albert.apple.com/deviceservices/deviceActivation?device={}", os_config.get_activation_device()))
+         .header("User-Agent", os_config.get_normal_ua("ApplePushService/4.0"))
+         .form(&FormBody { activation_info: plist_to_string(&request)? })
+-        .send().await?
+-        .text().await?;
++        .send().await?;
++    let http_status = response.status().as_u16();
++    let request = response.text().await?;
++    // Closed diagnostic vocabulary; no response body, headers, certificate or IDs.
++    let rejection = if request.contains("DEVICE_INFO_INTEGRITY_FAILED") {
++        "device-info-integrity-failed"
++    } else if request.contains("Device Unknown") || request.contains("DEVICE_UNKNOWN") {
++        "device-unknown"
++    } else { "unclassified" };
++    log::info!("registration-diagnostic stage=apple-activation http_status={} rejection={} body=omitted", http_status, rejection);
++    if (400..500).contains(&http_status) || rejection != "unclassified" {
++        log::warn!("registration-diagnostic stage=apple-activation event=rejected action=stop");
++        return Err(PushError::DoNotRetry(Box::new(PushError::AlbertCertParseError)));
++    }
+ 
+     let protocol = Regex::new(r"<Protocol>(.*)</Protocol>").unwrap();
+-    let captures = protocol.captures(&request).ok_or(PushError::AlbertCertParseError)?;
+-    
+-    let parsed: Value = plist::from_bytes(captures[1].as_bytes())?;
+-
+-    let certificate = get_nested_value(&parsed, &["device-activation", "activation-record", "DeviceCertificate"]).and_then(|v| v.as_data()).ok_or(PushError::AlbertCertParseError)?;
++    let Some(captures) = protocol.captures(&request) else {
++        log::warn!("registration-diagnostic stage=apple-activation protocol_present=false certificate_present=false action=stop body=omitted");
++        return Err(PushError::DoNotRetry(Box::new(PushError::AlbertCertParseError)));
++    };
++    let parsed: Value = match plist::from_bytes(captures[1].as_bytes()) {
++        Ok(parsed) => parsed,
++        Err(_) => {
++            log::warn!("registration-diagnostic stage=apple-activation protocol_present=true plist_valid=false action=stop body=omitted");
++            return Err(PushError::DoNotRetry(Box::new(PushError::AlbertCertParseError)));
++        }
++    };
++    let certificate = get_nested_value(&parsed, &["device-activation", "activation-record", "DeviceCertificate"]).and_then(|v| v.as_data());
++    let Some(certificate) = certificate else {
++        log::warn!("registration-diagnostic stage=apple-activation protocol_present=true certificate_present=false action=stop body=omitted");
++        return Err(PushError::DoNotRetry(Box::new(PushError::AlbertCertParseError)));
++    };
++    log::info!("registration-diagnostic stage=apple-activation certificate_present=true");
+ 
+     Ok(KeyPairNew {
+         cert: X509::from_pem(certificate)?.to_der()?,
+diff --git a/src/ids/identity_manager.rs b/src/ids/identity_manager.rs
+index 56c840e..c2d74a0 100644
+--- a/src/ids/identity_manager.rs
++++ b/src/ids/identity_manager.rs
+@@ -360,13 +360,13 @@ pub type IdentityManager = Arc<ResourceManager<IdentityResource>>;
+ impl Resource for IdentityResource {
+ 
+     async fn generate(self: &std::sync::Arc<Self>) -> Result<tokio::task::JoinHandle<()>, PushError> {
+-        info!("Reregistering now!");
++        info!("registration-diagnostic stage=renewal event=registration-started");
+ 
+         let mut users_lock = self.users.write().await;
+ 
+         debug!("User locked!");
+         if let Err(err) = register(self.config.as_ref(), &*self.aps.state.read().await, &self.services, &mut *users_lock, &self.identity).await {
+-            debug!("Register failed {}!", err);
++            log::warn!("registration-diagnostic stage=renewal event=registration-failed details=omitted");
+             drop(users_lock);
+ 
+             let needs_relog = matches!(err, PushError::AuthInvalid(IDSError(6005)) | PushError::RegisterFailed(IDSError(6005)));
+@@ -386,7 +386,7 @@ impl Resource for IdentityResource {
+         cache_lock.verity(&self.aps, &self.users.read().await, self.services).await;
+         drop(cache_lock);
+ 
+-        info!("Successfully reregistered!");
++        info!("registration-diagnostic stage=renewal event=registration-succeeded");
+ 
+         let my_ref = self.clone();
+         Ok(tokio::spawn(async move {

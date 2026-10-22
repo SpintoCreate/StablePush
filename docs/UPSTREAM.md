@@ -1,0 +1,13 @@
+# Provenance and boundaries
+
+The starting app is JJTech0130/ValidationRelay at e1b74fbc92a1664dd4fafec526f59acd8f5e6425 (James Gill, 2024). Its Swift files, Xcode project, assets, entitlements and absd MIG definitions were copied into this initially empty repository and modified here. Existing author comments are retained or acknowledged in replacements. Its unused TrollStore submodule and NWWebSocket package were not copied as dependencies. No license file was present in that upstream checkout; this repository does not invent an upstream license or claim ownership of those portions.
+
+OpenBubbles/relayserver, ziggy416/OpenBubblesProxy, OpenBubbles/openbubbles-app and OpenBubbles/rustpush were inspected separately. No daemon executable, Debian packaging, LaunchDaemon, Docker image, proxy server or runtime from those repositories is included. The diagnostic patch is against the pinned rustpush revision listed in AUDIT.md.
+
+The candidate keeps upstream `dev.jjtech.experiments.ValidationRelay` bundle identity for a possible in-place data migration. This can replace an upstream installation. It retains the original `abs-client` and protected MobileGestalt entitlements, and adds a normal per-app application identifier/Keychain group for secure pairing storage; there are no added background, root, platform, JIT or jailbreak entitlements. Use of these existing private interfaces on a given iOS 15 build remains a device-test prerequisite, not a guarantee inferred from TrollStore installation.
+
+The MIG `waittime 5000` directive was checked against Apple's bootstrap_cmds `migcom.tproj/parser.y`, `lexxer.l` and `routine.c` source. This bounds receive/reply waits; generated code and runtime behavior still require the Mac build/device test. No undocumented NAC context-destruction operation was invented. The application copies and deallocates successful out-of-line reply buffers. The lifetime of server-side NAC contexts and behavior after interrupted IPC remain platform limitations to investigate on-device if repeated calls fail.
+
+The iPhone's hardware properties are read only. They must cross the existing authenticated relay channel to preserve protocol compatibility; they are excluded from diagnostics. A stable Keychain pairing is separate from device hardware identity. Resetting a pairing clears credentials only and does not change serial, UDID, model or Apple activation identity.
+
+This project cannot make iOS guarantee app execution while backgrounded/locked. No implementation under these constraints can honestly promise a continuously available provider solely because it was installed using TrollStore. Keep Awake applies to foreground idle sleep only.
